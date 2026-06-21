@@ -1,3 +1,7 @@
 arduino_minimum
 drumhead
 HIDtaiko.code-workspace
+build
+build2
+.vs*
+CLAUDE.md
