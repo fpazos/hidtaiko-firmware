@@ -4,6 +4,7 @@
 #include "hardware/gpio.h"
 #include "class/hid/hid.h"
 #include "../rp2_common/hardware_adc/include/hardware/adc.h"
+#include "usb_descriptors.h"
 
 long int timer_f    = 0;
 long int timer_d    = 0;
@@ -44,6 +45,30 @@ private:
         {2, HID_KEY_J},
         {3, HID_KEY_K},
     };
+    // Matrix config: rows GP9,GP8,GP7 ; cols GP6,GP5,GP4
+    const uint8_t matrix_rows[3] = {9, 8, 7};
+    const uint8_t matrix_cols[3] = {6, 5, 4};
+    const uint8_t matrix_map[9] = {
+        HID_KEY_L,         // row0,col0 -> NORTH
+        HID_KEY_BACKSPACE, // row0,col1 -> EAST
+        HID_KEY_ENTER,     // row0,col2 -> SOUTH
+        HID_KEY_P,         // row1,col0 -> WEST
+        HID_KEY_Q,         // row1,col1 -> L
+        HID_KEY_E,         // row1,col2 -> R
+        HID_KEY_ESCAPE,    // row2,col0 -> START
+        HID_KEY_TAB,       // row2,col1 -> SELECT
+        HID_KEY_NONE       // row2,col2 -> HOME (none by default)
+    };
+
+    // Corner button state tracking (debounce)
+    bool corner_button_pressed = false;
+    long int corner_button_last_change = 0;
+    static constexpr long int CORNER_DEBOUNCE_MS = 50;
+
+    void updateLedState() {
+        // LED ON when in Switch gamepad mode, OFF when in keyboard mode
+        gpio_put(25, (g_usb_mode == USB_MODE_SWITCH_GAMEPAD) ? 1 : 0);
+    }
 
 public:
     uint8_t key_codes[6] = {0};
@@ -55,12 +80,59 @@ public:
             gpio_pull_up(pin_keys[i].pin);
             gpio_set_dir(pin_keys[i].pin, GPIO_IN);
         }
+
+        // Init matrix pins
+        for (int r = 0; r < 3; ++r) {
+            gpio_init(matrix_rows[r]);
+            gpio_set_dir(matrix_rows[r], GPIO_IN);
+            gpio_pull_down(matrix_rows[r]);
+        }
+        for (int c = 0; c < 3; ++c) {
+            gpio_init(matrix_cols[c]);
+            gpio_set_dir(matrix_cols[c], GPIO_OUT);
+            gpio_put(matrix_cols[c], 0);
+        }
+
+        // Init LED GP25 (RP2040 built-in LED) + set initial state
+        gpio_init(25);
+        gpio_set_dir(25, GPIO_OUT);
+        updateLedState();
     }
 
     virtual ~KeyBoard() {}
 
     uint32_t millis() {
         return to_ms_since_boot(get_absolute_time());
+    }
+
+    // Map HID key codes to Switch gamepad buttons
+    hid_switch_report_t getGamepadReport() {
+        hid_switch_report_t report = {0};
+        
+        // Map matrix keys to Switch buttons
+        for (int i = 0; i < 6 && key_codes[i] != 0; ++i) {
+            switch (key_codes[i]) {
+                case HID_KEY_L:          report.buttons |= 0x0001; break; // Button A (0)
+                case HID_KEY_BACKSPACE:  report.buttons |= 0x0002; break; // Button B (1)
+                case HID_KEY_ENTER:      report.buttons |= 0x0004; break; // Button X (2)
+                case HID_KEY_P:          report.buttons |= 0x0008; break; // Button Y (3)
+                case HID_KEY_Q:          report.buttons |= 0x0100; break; // Button L (8)
+                case HID_KEY_E:          report.buttons |= 0x0200; break; // Button R (9)
+                case HID_KEY_ESCAPE:     report.buttons |= 0x0010; break; // Button LB (4)
+                case HID_KEY_TAB:        report.buttons |= 0x0020; break; // Button RB (5)
+            }
+        }
+        
+        // Analog sticks centered (neutral = 128 = 0x80)
+        report.x = 0x80;
+        report.y = 0x80;
+        report.z = 0x80;
+        report.rz = 0x80;
+        
+        // Hat switch (D-pad) = neutral
+        report.hat = 0x0f;
+        
+        return report;
     }
 
     bool update() {
@@ -115,6 +187,56 @@ public:
 
             if (index >= 6) {
                 break;
+            }
+        }
+
+        // Matrix scan (append results up to 6 total keys)
+        for (int c = 0; c < 3 && index < 6; ++c) {
+            // drive only this column high
+            for (int cc = 0; cc < 3; ++cc) gpio_put(matrix_cols[cc], (cc == c) ? 1 : 0);
+            sleep_us(5);
+            for (int r = 0; r < 3 && index < 6; ++r) {
+                bool val = gpio_get(matrix_rows[r]);
+                if (val) {
+                    int pos = r * 3 + c;
+                    
+                    // Special handling for corner button (row2, col2, pos=8)
+                    if (pos == 8) {
+                        // Detect rising edge with debounce
+                        if (!corner_button_pressed && (main_timer - corner_button_last_change) > CORNER_DEBOUNCE_MS) {
+                            corner_button_pressed = true;
+                            corner_button_last_change = main_timer;
+                            
+                            // Toggle USB mode
+                            usb_mode_t new_mode = (g_usb_mode == USB_MODE_KEYBOARD) 
+                                                   ? USB_MODE_SWITCH_GAMEPAD 
+                                                   : USB_MODE_KEYBOARD;
+                            usb_mode_switch(new_mode);
+                            updateLedState();
+                            changed = true;
+                        }
+                    } else {
+                        uint8_t code = matrix_map[pos];
+                        if (code != HID_KEY_NONE) key_codes[index++] = code;
+                        changed = true;
+                    }
+                }
+            }
+            // release column
+            gpio_put(matrix_cols[c], 0);
+        }
+        
+        // Detect falling edge of corner button
+        if (corner_button_pressed) {
+            // Check if button is still pressed by reading col2
+            gpio_put(matrix_cols[2], 1);
+            sleep_us(5);
+            bool corner_still_pressed = gpio_get(matrix_rows[2]);
+            gpio_put(matrix_cols[2], 0);
+            
+            if (!corner_still_pressed && (main_timer - corner_button_last_change) > CORNER_DEBOUNCE_MS) {
+                corner_button_pressed = false;
+                corner_button_last_change = main_timer;
             }
         }
 

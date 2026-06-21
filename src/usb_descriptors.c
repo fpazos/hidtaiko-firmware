@@ -1,5 +1,9 @@
 #include "tusb.h"
 #include "usb_descriptors.h"
+#include "pico/time.h"
+
+// Global USB mode (default: keyboard)
+usb_mode_t g_usb_mode = USB_MODE_KEYBOARD;
 
 /* 複数のインターフェースの組み合わせは一意のプロダクトIDを持つ必要があります。これは、PCが最初の接続後にデバイスドライバーを保存するためです。
  * 同じVID/PIDで異なるインターフェースを持つ場合（例: 最初にMSC、後にCDC）は、PCでシステムエラーが発生する可能性があります。
@@ -50,12 +54,60 @@ uint8_t const *tud_descriptor_device_cb(void)
 
 uint8_t const desc_hid_report[] = {TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(REPORT_ID_KEYBOARD))};
 
+// Switch gamepad HID report descriptor (copied from ITAIKO-firmware)
+uint8_t const desc_hid_report_switch[] = {
+    0x05, 0x01,       // Usage Page (Generic Desktop Ctrls)
+    0x09, 0x05,       // Usage (Game Pad)
+    0xA1, 0x01,       // Collection (Application)
+    0x15, 0x00,       //   Logical Minimum (0)
+    0x25, 0x01,       //   Logical Maximum (1)
+    0x35, 0x00,       //   Physical Minimum (0)
+    0x45, 0x01,       //   Physical Maximum (1)
+    0x75, 0x01,       //   Report Size (1)
+    0x95, 0x10,       //   Report Count (16)
+    0x05, 0x09,       //   Usage Page (Button)
+    0x19, 0x01,       //   Usage Minimum (0x01)
+    0x29, 0x10,       //   Usage Maximum (0x10)
+    0x81, 0x02,       //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x05, 0x01,       //   Usage Page (Generic Desktop Ctrls)
+    0x25, 0x07,       //   Logical Maximum (7)
+    0x46, 0x3B, 0x01, //   Physical Maximum (315)
+    0x75, 0x04,       //   Report Size (4)
+    0x95, 0x01,       //   Report Count (1)
+    0x65, 0x14,       //   Unit (System: English Rotation, Length: Centimeter)
+    0x09, 0x39,       //   Usage (Hat switch)
+    0x81, 0x42,       //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,Null State)
+    0x65, 0x00,       //   Unit (None)
+    0x95, 0x01,       //   Report Count (1)
+    0x81, 0x01,       //   Input (Const,Array,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x26, 0xFF, 0x00, //   Logical Maximum (255)
+    0x46, 0xFF, 0x00, //   Physical Maximum (255)
+    0x09, 0x30,       //   Usage (X)
+    0x09, 0x31,       //   Usage (Y)
+    0x09, 0x32,       //   Usage (Z)
+    0x09, 0x35,       //   Usage (Rz)
+    0x75, 0x08,       //   Report Size (8)
+    0x95, 0x04,       //   Report Count (4)
+    0x81, 0x02,       //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x06, 0x00, 0xFF, //   Usage Page (Vendor Defined 0xFF00)
+    0x09, 0x20,       //   Usage (0x20)
+    0x95, 0x01,       //   Report Count (1)
+    0x81, 0x02,       //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x0A, 0x21, 0x26, //   Usage (0x2621)
+    0x95, 0x08,       //   Report Count (8)
+    0x91, 0x02,       //   Output (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position,Non-volatile)
+    0xC0,             // End Collection
+};
+
 // GET HID REPORT DESCRIPTOR 受信時に呼び出される
 // アプリケーションはディスクリプタへのポインタを返す
 // ディスクリプタの内容は転送が完了するまで存在する必要がある
 uint8_t const *tud_hid_descriptor_report_cb(uint8_t instance)
 {
     (void)instance;
+    if (g_usb_mode == USB_MODE_SWITCH_GAMEPAD) {
+        return desc_hid_report_switch;
+    }
     return desc_hid_report;
 }
 
@@ -89,6 +141,17 @@ uint8_t const desc_configuration[] =
 
     // Interface number, string index, EP notification address and size, EP data address (out, in) and size.
     TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, 4, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT, EPNUM_CDC_IN, 64)
+};
+
+// Switch gamepad configuration (HID only, no CDC for simplicity)
+#define CONFIG_TOTAL_LEN_SWITCH (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN)
+uint8_t const desc_configuration_switch[] =
+{
+    // Config number, interface count, string index, total length, attribute, power in mA
+    TUD_CONFIG_DESCRIPTOR(1, 1, 0, CONFIG_TOTAL_LEN_SWITCH, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
+
+    // Interface number, string index, protocol, report descriptor len, EP In address, size & polling interval
+    TUD_HID_DESCRIPTOR(0, 0, HID_ITF_PROTOCOL_NONE, sizeof(desc_hid_report_switch), EPNUM_HID, CFG_TUD_HID_EP_BUFSIZE, 1),
 };
 
 #if TUD_OPT_HIGH_SPEED
@@ -143,8 +206,27 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index)
 {
     (void)index; // 複数の設定用
 
-    // この例では、高速モードとフルスピードモードの両方で同じ設定を使用
+    if (g_usb_mode == USB_MODE_SWITCH_GAMEPAD) {
+        return desc_configuration_switch;
+    }
     return desc_configuration;
+}
+
+//--------------------------------------------------------------------+
+// USB Mode Switch Function
+//--------------------------------------------------------------------+
+void usb_mode_switch(usb_mode_t new_mode)
+{
+    if (g_usb_mode == new_mode) {
+        return; // Already in the desired mode
+    }
+
+    g_usb_mode = new_mode;
+
+    // Reinitialize USB to load new descriptors
+    tud_deinit(0); // 0 = default USB device port
+    sleep_ms(100); // Give USB time to disconnect
+    tud_init(0);   // 0 = default USB device port
 }
 
 //--------------------------------------------------------------------+

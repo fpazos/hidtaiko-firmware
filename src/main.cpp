@@ -169,25 +169,56 @@ static void send_hid_report(bool keys_pressed)
 
     if (!tud_hid_ready()) return;
 
-    if (keys_pressed && !waiting)
-    {
-        tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, keyboard.key_codes);
-        send_empty = true;
-        waiting = true;
-        last_send_time = now;
-    }
-    else if (waiting)
-    {
-        if (now - last_send_time >= (uint32_t)kando[7]) {
-            tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, NULL);
-            waiting = false;
+    if (g_usb_mode == USB_MODE_SWITCH_GAMEPAD) {
+        // Switch gamepad mode
+        hid_switch_report_t gamepad_report = keyboard.getGamepadReport();
+        
+        if (keys_pressed && !waiting) {
+            tud_hid_report(0, &gamepad_report, sizeof(gamepad_report));
+            send_empty = true;
+            waiting = true;
+            last_send_time = now;
+        } else if (waiting) {
+            if (now - last_send_time >= (uint32_t)kando[7]) {
+                // Send neutral report
+                hid_switch_report_t neutral_report = {0};
+                neutral_report.x = 0x80;
+                neutral_report.y = 0x80;
+                neutral_report.z = 0x80;
+                neutral_report.rz = 0x80;
+                neutral_report.hat = 0x0f;
+                tud_hid_report(0, &neutral_report, sizeof(neutral_report));
+                waiting = false;
+            }
+        } else {
+            if (send_empty) {
+                hid_switch_report_t neutral_report = {0};
+                neutral_report.x = 0x80;
+                neutral_report.y = 0x80;
+                neutral_report.z = 0x80;
+                neutral_report.rz = 0x80;
+                neutral_report.hat = 0x0f;
+                tud_hid_report(0, &neutral_report, sizeof(neutral_report));
+                send_empty = false;
+            }
         }
-    }
-    else
-    {
-        if (send_empty) {
-            tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, NULL);
-            send_empty = false;
+    } else {
+        // Keyboard mode (original behavior)
+        if (keys_pressed && !waiting) {
+            tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, keyboard.key_codes);
+            send_empty = true;
+            waiting = true;
+            last_send_time = now;
+        } else if (waiting) {
+            if (now - last_send_time >= (uint32_t)kando[7]) {
+                tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, NULL);
+                waiting = false;
+            }
+        } else {
+            if (send_empty) {
+                tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, NULL);
+                send_empty = false;
+            }
         }
     }
 }
