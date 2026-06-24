@@ -53,6 +53,9 @@ void hid_task(void);
 
 KeyBoard keyboard;
 void serial_task(void);
+// last switch output buffer + rumble timer
+static uint8_t last_switch_output[64];
+static uint32_t rumble_end_ms = 0;
 
 void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
 {
@@ -235,6 +238,16 @@ void hid_task(void)
     {
         send_hid_report(keys_pressed);
     }
+    
+    // Update LED for rumble effect: flash opposite of steady state while rumble active
+    bool steady = (g_usb_mode == USB_MODE_SWITCH_GAMEPAD);
+    uint32_t now = keyboard.millis();
+    if (now < rumble_end_ms) {
+        // flash: invert steady
+        gpio_put(25, !steady);
+    } else {
+        gpio_put(25, steady);
+    }
 }
 
 void tud_hid_report_complete_cb(uint8_t instance, uint8_t const *report, uint8_t len)
@@ -258,8 +271,21 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
     (void)instance;
     (void)report_id;
     (void)report_type;
-    (void)buffer;
-    (void)bufsize;
+
+    if (g_usb_mode == USB_MODE_SWITCH_GAMEPAD && buffer != NULL && bufsize > 0) {
+        // store last output report
+        uint16_t copy_len = bufsize < sizeof(last_switch_output) ? bufsize : sizeof(last_switch_output);
+        memcpy(last_switch_output, buffer, copy_len);
+
+        // simple rumble detection: if any of the first 8 bytes are non-zero, trigger short rumble
+        bool has_rumble = false;
+        for (int i = 0; i < (int)copy_len && i < 8; ++i) {
+            if (last_switch_output[i] != 0) { has_rumble = true; break; }
+        }
+        if (has_rumble) {
+            rumble_end_ms = keyboard.millis() + 150; // rumble 150ms visual
+        }
+    }
 }
 
 void tud_suspend_cb(bool remote_wakeup_en) {

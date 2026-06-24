@@ -1,7 +1,44 @@
+# Workspace files
+*.code-workspace
+
+# Build outputs
+build/
+build2/
+cmake_build/
+CMakeFiles/
+CMakeCache.txt
+Makefile
+
+# Pico/ARM build artifacts
+*.elf
+*.bin
+*.hex
+*.uf2
+*.map
+*.lst
+*.o
+*.d
+*.a
+
+# pico sdk fetched deps / CMake deps
+_deps/
+build/_deps/
+
+# IDEs and editors
+.vscode/
+.vs*/
+.idea/
+*.swp
+
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project-specific
 arduino_minimum
 drumhead
 HIDtaiko.code-workspace
-build
-build2
-.vs*
-CLAUDE.md
