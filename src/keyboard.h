@@ -49,15 +49,15 @@ private:
     const uint8_t matrix_rows[3] = {9, 8, 7};
     const uint8_t matrix_cols[3] = {6, 5, 4};
     const uint8_t matrix_map[9] = {
-        HID_KEY_L,         // row0,col0 -> NORTH
-        HID_KEY_BACKSPACE, // row0,col1 -> EAST
-        HID_KEY_ENTER,     // row0,col2 -> SOUTH
-        HID_KEY_P,         // row1,col0 -> WEST
-        HID_KEY_Q,         // row1,col1 -> L
-        HID_KEY_E,         // row1,col2 -> R
-        HID_KEY_ESCAPE,    // row2,col0 -> START
-        HID_KEY_TAB,       // row2,col1 -> SELECT
-        HID_KEY_NONE       // row2,col2 -> HOME (none by default)
+        HID_KEY_L,         // row0,col0 -> NORTH (maps to Switch X)
+        HID_KEY_BACKSPACE, // row0,col1 -> EAST  (maps to Switch A)
+        HID_KEY_ENTER,     // row0,col2 -> SOUTH (maps to Switch B)
+        HID_KEY_P,         // row1,col0 -> WEST  (maps to Switch Y)
+        HID_KEY_Q,         // row1,col1 -> L     (shoulder)
+        HID_KEY_E,         // row1,col2 -> R     (shoulder)
+        HID_KEY_ESCAPE,    // row2,col0 -> START (+)
+        HID_KEY_TAB,       // row2,col1 -> SELECT (-)
+        HID_KEY_HOME       // row2,col2 -> HOME (also used to toggle USB mode)
     };
 
     // Corner button state tracking (debounce)
@@ -112,14 +112,31 @@ public:
         // Map matrix keys to Switch buttons
         for (int i = 0; i < 6 && key_codes[i] != 0; ++i) {
             switch (key_codes[i]) {
-                case HID_KEY_L:          report.buttons |= 0x0001; break; // Button A (0)
-                case HID_KEY_BACKSPACE:  report.buttons |= 0x0002; break; // Button B (1)
-                case HID_KEY_ENTER:      report.buttons |= 0x0004; break; // Button X (2)
-                case HID_KEY_P:          report.buttons |= 0x0008; break; // Button Y (3)
-                case HID_KEY_Q:          report.buttons |= 0x0100; break; // Button L (8)
-                case HID_KEY_E:          report.buttons |= 0x0200; break; // Button R (9)
-                case HID_KEY_ESCAPE:     report.buttons |= 0x0010; break; // Button LB (4)
-                case HID_KEY_TAB:        report.buttons |= 0x0020; break; // Button RB (5)
+                // Match ITAIKO bit layout exactly:
+                // bit0: Y, bit1: B, bit2: A, bit3: X
+                case HID_KEY_P:          report.buttons |= (1 << 0); break; // Y (west)
+                case HID_KEY_ENTER:      report.buttons |= (1 << 1); break; // B (south)
+                case HID_KEY_BACKSPACE:  report.buttons |= (1 << 2); break; // A (east)
+                case HID_KEY_L:          report.buttons |= (1 << 3); break; // X (north)
+
+                // bit4: L, bit5: R (shoulders)
+                case HID_KEY_Q:          report.buttons |= (1 << 4); break; // L (shoulder)
+                case HID_KEY_E:          report.buttons |= (1 << 5); break; // R (shoulder)
+
+                // bit6/7: ZL/ZR (side hits)
+                case HID_KEY_D:          report.buttons |= (1 << 6); break; // ZL (ka_left)
+                case HID_KEY_K:          report.buttons |= (1 << 7); break; // ZR (ka_right)
+
+                // bit8: Select (-), bit9: Start (+)
+                case HID_KEY_TAB:        report.buttons |= (1 << 8); break; // Select (-)
+                case HID_KEY_ESCAPE:     report.buttons |= (1 << 9); break; // Start (+)
+
+                // bit10/11: LS/RS (center hits)
+                case HID_KEY_F:          report.buttons |= (1 << 10); break; // LS (don_left)
+                case HID_KEY_J:          report.buttons |= (1 << 11); break; // RS (don_right)
+
+                // bit12: Home, bit13: Capture
+                case HID_KEY_HOME:       report.buttons |= (1 << 12); break; // Home
             }
         }
         
@@ -202,16 +219,21 @@ public:
                     
                     // Special handling for corner button (row2, col2, pos=8)
                     if (pos == 8) {
-                        // Detect rising edge with debounce
+                        // Corner button: also acts as HOME key but keeps its toggle behavior.
                         if (!corner_button_pressed && (main_timer - corner_button_last_change) > CORNER_DEBOUNCE_MS) {
                             corner_button_pressed = true;
                             corner_button_last_change = main_timer;
-                            
-                            // Toggle USB mode
-                            usb_mode_t new_mode = (g_usb_mode == USB_MODE_KEYBOARD) 
-                                                   ? USB_MODE_SWITCH_GAMEPAD 
-                                                   : USB_MODE_KEYBOARD;
-                            usb_mode_switch(new_mode);
+
+                            // Add HOME keycode to the report if there's room
+                            if (index < 6) {
+                                key_codes[index++] = HID_KEY_HOME;
+                            }
+
+                            // One-way switch: only switch from Keyboard -> Switch.
+                            // To return to Keyboard a reset/reconnect is required.
+                            if (g_usb_mode == USB_MODE_KEYBOARD) {
+                                usb_mode_switch(USB_MODE_SWITCH_GAMEPAD);
+                            }
                             updateLedState();
                             changed = true;
                         }
