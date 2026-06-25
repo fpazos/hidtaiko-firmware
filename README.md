@@ -5,6 +5,10 @@ Overview
 --------
 This firmware turns an RP2040-based PCB into a Taiko no Tatsujin controller compatible with Nintendo Switch (HORI Tatacon profile) and as a keyboard HID. It follows the ITAIKO firmware approach: minimal device behavior focused on HID input reports and descriptor compatibility. No rumble/vibration or special LED features are required for operation on a Switch console.
 
+Thanks to
+HIDTaiko: https://github.com/kasasiki3/HIDtaiko
+ITaiko: https://github.com/itaiko-project/ITAIKO-firmware
+
 Features
 --------
 - 3x3 digital button matrix (9 buttons) used for additional controls
@@ -20,10 +24,19 @@ USB
 Pinout (RP2040 GPIO numbers)
 ----------------------------
 - ADC (drum pads): GP26, GP27, GP28, GP29 (ADC channels 0..3)
-- Matrix rows: GP9 (row0), GP8 (row1), GP7 (row2)
-- Matrix cols: GP6 (col0), GP5 (col1), GP4 (col2)
+- Matrix rows: GP8 (row0), GP7 (row1), GP6 (row2)
+- Matrix cols: GP4 (col0), GP3 (col1), GP2 (col2)
   - Matrix wiring expects diodes from column → row (columns drive HIGH, rows read with pull-down)
 - Mode toggle: bottom-right matrix key (row2, col2 — GP7 read while GP4 driven)
+
+Switch mapping (3x3)
+--------------------
+
+|     | Col0 | Col1 | Col2 |
+|-----|------|------|------|
+| Row0| X    | A    | L    |
+| Row1| Y    | B    | R    |
+| Row2| +    | capture | HOME (Switch mode) |
 
 Build (RP2040 Pico SDK / CMake)
 -------------------------------
@@ -35,7 +48,7 @@ Requirements:
 Build steps:
 
 ```bash
-cd /home/fpazos/repos/hidtaiko-firmware
+cd /hidtaiko-firmware
 rm -rf build && mkdir build && cd build
 cmake -DPICO_SDK_FETCH_FROM_GIT=ON ..
 make -j$(nproc)

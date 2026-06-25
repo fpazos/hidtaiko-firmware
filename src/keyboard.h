@@ -45,15 +45,15 @@ private:
         {2, HID_KEY_J},
         {3, HID_KEY_K},
     };
-    // Matrix config: rows GP9,GP8,GP7 ; cols GP6,GP5,GP4
-    const uint8_t matrix_rows[3] = {9, 8, 7};
-    const uint8_t matrix_cols[3] = {6, 5, 4};
+    // Matrix config: rows GP8,GP7,GP6 ; cols GP4,GP3,GP2
+    const uint8_t matrix_rows[3] = {8, 7, 6};
+    const uint8_t matrix_cols[3] = {4, 3, 2};
     const uint8_t matrix_map[9] = {
         HID_KEY_L,         // row0,col0 -> NORTH (maps to Switch X)
         HID_KEY_BACKSPACE, // row0,col1 -> EAST  (maps to Switch A)
-        HID_KEY_ENTER,     // row0,col2 -> SOUTH (maps to Switch B)
-        HID_KEY_P,         // row1,col0 -> WEST  (maps to Switch Y)
         HID_KEY_Q,         // row1,col1 -> L     (shoulder)
+        HID_KEY_P,         // row1,col0 -> WEST  (maps to Switch Y)
+        HID_KEY_ENTER,     // row0,col2 -> SOUTH (maps to Switch B)
         HID_KEY_E,         // row1,col2 -> R     (shoulder)
         HID_KEY_ESCAPE,    // row2,col0 -> START (+)
         HID_KEY_TAB,       // row2,col1 -> SELECT (-)
