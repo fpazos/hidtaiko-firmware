@@ -49,14 +49,14 @@ private:
     const uint8_t matrix_rows[3] = {8, 7, 6};
     const uint8_t matrix_cols[3] = {4, 3, 2};
     const uint8_t matrix_map[9] = {
-        HID_KEY_L,         // row0,col0 -> NORTH (maps to Switch X)
-        HID_KEY_BACKSPACE, // row0,col1 -> EAST  (maps to Switch A)
-        HID_KEY_Q,         // row1,col1 -> L     (shoulder)
-        HID_KEY_P,         // row1,col0 -> WEST  (maps to Switch Y)
-        HID_KEY_ENTER,     // row0,col2 -> SOUTH (maps to Switch B)
-        HID_KEY_E,         // row1,col2 -> R     (shoulder)
+        HID_KEY_X,         // row0,col0 -> NORTH (maps to Switch X)
+        HID_KEY_A, // row0,col1 -> EAST  (maps to Switch A)
+        HID_KEY_L,         // row1,col1 -> L     (shoulder)
+        HID_KEY_Y,         // row1,col0 -> WEST  (maps to Switch Y)
+        HID_KEY_B,     // row0,col2 -> SOUTH (maps to Switch B)
+        HID_KEY_R,         // row1,col2 -> R     (shoulder)
         HID_KEY_ESCAPE,    // row2,col0 -> START (+)
-        HID_KEY_TAB,       // row2,col1 -> SELECT (-)
+        HID_KEY_MINUS,       // row2,col1 -> SELECT (-)
         HID_KEY_HOME       // row2,col2 -> HOME (also used to toggle USB mode)
     };
 
